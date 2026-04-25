@@ -1,15 +1,19 @@
 let _bid=0;let selectedBlock=null;
 
-// ─── FIX: getBlocks() was using b.offsetHeight which returns 0 when the
-// parent view is hidden (display:none). Blocks always have an explicit
-// style.height set, so we read from that instead. ───────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ISSUE 5 FIX — Root cause: block height is stored as (n × ROW_H - 6) because
+// a 6px visual gap is subtracted in createBlock. Dividing that raw pixel value
+// by ROW_H gives 58/64 = 0.906… instead of 1.0.
+// Fix: add the 6px gap back before dividing: Math.round((height + 6) / ROW_H)
+// 1-hour block: (58+6)/64 = 1.0 ✓   2-hour block: (122+6)/64 = 2.0 ✓
+// ══════════════════════════════════════════════════════════════════════════════
 function getBlocks(){
   return Array.from(document.querySelectorAll('#grid-area .block')).map(b=>({
     hex:b.dataset.hex,catId:b.dataset.cat||'',
     text:(b.querySelector('.block-text')||{}).textContent||'',
     startH:(parseFloat(b.style.top)||0)/ROW_H,
-    // FIX: prefer explicit style.height; fall back to offsetHeight for legacy
-    durationH:(parseFloat(b.style.height)||b.offsetHeight)/ROW_H,
+    // FIX ↓  was: (parseFloat(b.style.height)||b.offsetHeight)/ROW_H → 0.906
+    durationH:Math.round(((parseFloat(b.style.height)||b.offsetHeight)+6)/ROW_H),
     done:b.dataset.done==='1',
   }));
 }
@@ -21,7 +25,6 @@ function saveWS(){
     text:(b.querySelector('.block-text')||{}).textContent||'',
     left:parseFloat(b.style.left)||0,top:parseFloat(b.style.top)||0,
     width:parseFloat(b.style.width)||210,
-    // FIX: save from style.height (always set explicitly) not offsetHeight
     height:parseFloat(b.style.height)||b.offsetHeight,
     done:b.dataset.done==='1',
   }));
@@ -64,22 +67,18 @@ function createBlock(x,y,text,color,catId,w,h,id,done){
   block.dataset.bid=bid;block.dataset.hex=c.hex;block.dataset.fg=c.fg;
   block.dataset.name=c.name||'';block.dataset.cat=catId||'';block.dataset.done=done?'1':'0';
   block.style.cssText=`left:${x}px;top:${freeY}px;width:${bW}px;height:${bH}px;background:${c.hex};color:${c.fg}`;
-  // Header row
   const hdr=document.createElement('div');hdr.className='block-header';
   const dot=document.createElement('div');dot.className='block-cat-dot';dot.style.background=cat?cat.color:'rgba(255,255,255,.3)';
   const catLbl=document.createElement('div');catLbl.className='block-cat-label';catLbl.textContent=cat?cat.name:'';
   const chk=document.createElement('div');chk.className='block-check'+(done?' done':'');chk.textContent=done?'✓':'';chk.title='Mark complete (+pts)';
   chk.addEventListener('click',e=>{e.stopPropagation();toggleBlockDone(block,chk);});
   hdr.appendChild(dot);hdr.appendChild(catLbl);hdr.appendChild(chk);
-  // Text
   const txt=document.createElement('div');txt.className='block-text';txt.contentEditable='true';
   txt.dataset.ph='What are you doing?';txt.style.color=c.fg;if(text)txt.textContent=text;
   txt.addEventListener('mousedown',e=>e.stopPropagation());
   txt.addEventListener('input',()=>{saveWS();});
-  // Menu btn
   const btn=document.createElement('button');btn.className='block-menu-btn';btn.textContent='⋯';btn.style.color=c.fg;
   btn.addEventListener('click',e=>{e.stopPropagation();openBlockDD(block,btn);beep('click');});
-  // Resize handles
   const rb=document.createElement('div');rb.className='block-resize-b';
   rb.addEventListener('mousedown',e=>{e.stopPropagation();resizeBlockH(e,block);});
   const rr=document.createElement('div');rr.className='block-resize-r';
@@ -102,8 +101,7 @@ function toggleBlockDone(block,chk){
   chk.classList.toggle('done',!isDone);
   chk.textContent=!isDone?'✓':'';
   if(!isDone){
-    checkDayStreak();
-    beep('complete');
+    checkDayStreak();beep('complete');
     const pts=awardPoints(50,null,null);
     showToast(`✅ Task completed! +${pts} pts`);
     addNotif('✅','Task completed — points awarded!');
@@ -127,7 +125,6 @@ function applyBlockCat(block,catId){
   if(lbl)lbl.textContent=cat?cat.name:'';
 }
 
-// ── keyboard shortcuts ──
 document.addEventListener('keydown',e=>{
   if((e.key==='Delete'||e.key==='Backspace')&&selectedBlock&&!document.activeElement.isContentEditable&&document.activeElement.tagName!=='INPUT'){
     beep('delete');selectedBlock.remove();selectedBlock=null;saveWS();
@@ -138,7 +135,6 @@ document.getElementById('grid-area')?.addEventListener('mousedown',e=>{
   if(e.target.id==='grid-area'||e.target.classList.contains('grid-row'))selectBlock(null);
 });
 
-// ── drag / resize ──
 function dragBlock(e,block){
   e.preventDefault();
   const grid=document.getElementById('grid-area'),br=block.getBoundingClientRect();
@@ -146,27 +142,20 @@ function dragBlock(e,block){
   block.classList.add('dragging');block.style.zIndex=100;
   const onMove=ev=>{
     const gr=grid.getBoundingClientRect();
-    const nextLeft=Math.max(0,ev.clientX-gr.left-ox);
-    const nextTop=Math.max(0,ev.clientY-gr.top-oy);
-    const snappedTop=snapY(nextTop);
-    block.style.left=nextLeft+'px';
-    block.style.top=nextTop+'px';
+    block.style.left=Math.max(0,ev.clientX-gr.left-ox)+'px';
+    block.style.top=Math.max(0,ev.clientY-gr.top-oy)+'px';
+    const snappedTop=snapY(parseFloat(block.style.top));
     const row=Math.floor((ev.clientY-gr.top)/ROW_H);
     document.querySelectorAll('.grid-row.drop-hl').forEach(r=>r.classList.remove('drop-hl'));
     const rows=document.querySelectorAll('.grid-row');if(rows[row])rows[row].classList.add('drop-hl');
-    const collision=hasOverlap(snappedTop,origH,block);
-    block.classList.toggle('conflict',collision);
-    block.classList.toggle('valid',!collision);
+    block.classList.toggle('conflict',hasOverlap(snappedTop,origH,block));
+    block.classList.toggle('valid',!hasOverlap(snappedTop,origH,block));
   };
   const onUp=()=>{
-    block.classList.remove('dragging');block.style.zIndex='';
-    block.classList.remove('valid');
+    block.classList.remove('dragging','valid','conflict');block.style.zIndex='';
     document.querySelectorAll('.grid-row.drop-hl').forEach(r=>r.classList.remove('drop-hl'));
-    const rawY=parseFloat(block.style.top)||0;
-    block.style.top=findFreeSlot(rawY,origH,block)+'px';
-    block.classList.remove('conflict');
-    saveWS();
-    document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);
+    block.style.top=findFreeSlot(parseFloat(block.style.top)||0,origH,block)+'px';
+    saveWS();document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);
   };
   document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
 }
@@ -174,10 +163,8 @@ function resizeBlockH(e,block){
   e.preventDefault();const sy=e.clientY,sh=block.offsetHeight;
   const onMove=ev=>{block.style.height=Math.max(ROW_H-6,sh+(ev.clientY-sy))+'px';};
   const onUp=()=>{
-    // Snap to whole-hour increments; minimum 1 row
     block.style.height=(Math.max(1,Math.round(block.offsetHeight/ROW_H))*ROW_H-6)+'px';
-    saveWS();
-    document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);
+    saveWS();document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);
   };
   document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
 }
@@ -188,19 +175,16 @@ function resizeBlockW(e,block){
   document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
 }
 
-// ── drop zone ──
 let dragCatId=null;
 function setupGridDrop(){
   const grid=document.getElementById('grid-area');
   grid.addEventListener('dragover',e=>{
-    e.preventDefault();
-    e.dataTransfer.dropEffect='copy';
+    e.preventDefault();e.dataTransfer.dropEffect='copy';
     const isCatDrop=e.dataTransfer.types.includes('cat-id')||dragCatId;
     if(isCatDrop){
       document.querySelectorAll('#grid-area .block.cat-hl').forEach(b=>b.classList.remove('cat-hl'));
       const el=document.elementFromPoint(e.clientX,e.clientY);
-      const blk=el&&el.closest('.block');
-      if(blk)blk.classList.add('cat-hl');
+      const blk=el&&el.closest('.block');if(blk)blk.classList.add('cat-hl');
     }
   });
   grid.addEventListener('dragleave',e=>{
@@ -216,7 +200,7 @@ function setupGridDrop(){
       const el=document.elementFromPoint(e.clientX,e.clientY);
       const blk=el&&el.closest('#grid-area .block');
       if(blk&&catId){applyBlockCat(blk,catId);saveWS();const cat=CAT_MAP[catId];showToast(`${cat.emoji} ${cat.name} applied ✓`);beep('click');}
-      else{showToast('Drop onto a block to categorise it');}
+      else showToast('Drop onto a block to categorise it');
       dragCatId=null;return;
     }
     if(type==='preset-swatch'){
@@ -225,20 +209,32 @@ function setupGridDrop(){
       const p=presets[idx];if(!p)return;
       const col=BLOCK_COLORS.find(c=>c.hex===p.hex)||BLOCK_COLORS[0];
       const rect2=grid.getBoundingClientRect();
-      const rawY2=e.clientY-rect2.top,rawX2=e.clientX-rect2.left;
-      const blk=createBlock(Math.max(0,rawX2-105),findFreeSlot(rawY2,ROW_H-6),p.text,col,p.catId||'');
+      const blk=createBlock(Math.max(0,e.clientX-rect2.left-105),findFreeSlot(e.clientY-rect2.top,ROW_H-6),p.text,col,p.catId||'');
       beep('place');saveWS();selectBlock(blk);dragColorObj=null;return;
     }
     if(type!=='block-swatch')return;
     const rect=grid.getBoundingClientRect();
-    const rawY=e.clientY-rect.top,rawX=e.clientX-rect.left;
-    const freeY=findFreeSlot(rawY,ROW_H-6);
-    const blk=createBlock(Math.max(0,rawX-105),freeY,'',dragColorObj||BLOCK_COLORS[0],'');
-    beep('place');
-    saveWS();selectBlock(blk);dragColorObj=null;
+    const freeY=findFreeSlot(e.clientY-rect.top,ROW_H-6);
+    const blk=createBlock(Math.max(0,e.clientX-rect.left-105),freeY,'',dragColorObj||BLOCK_COLORS[0],'');
+    beep('place');saveWS();selectBlock(blk);dragColorObj=null;
   });
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ISSUE 1 FIX — Preset delete
+// Root cause: renderPresetBar() built chips with no delete control.
+// Fix: add an × button per chip that splices its index from tf_presets_v2.
+// ══════════════════════════════════════════════════════════════════════════════
+function deletePreset(idx){
+  const presets=JSON.parse(localStorage.getItem('tf_presets_v2')||'[]');
+  if(idx<0||idx>=presets.length)return;
+  const name=presets[idx].text;
+  presets.splice(idx,1);
+  localStorage.setItem('tf_presets_v2',JSON.stringify(presets));
+  renderPresetBar();
+  showToast(`Preset "${name}" removed`);
+}
 
 function renderPresetBar(){
   const wrap=document.getElementById('preset-chips-wrap');
@@ -246,18 +242,25 @@ function renderPresetBar(){
   if(!wrap)return;
   wrap.innerHTML='';
   const presets=JSON.parse(localStorage.getItem('tf_presets_v2')||'[]');
-  if(!presets.length){
-    if(hint)hint.style.display='';
-    return;
-  }
+  if(!presets.length){if(hint)hint.style.display='';return;}
   if(hint)hint.style.display='none';
   presets.forEach((p,i)=>{
     const col=BLOCK_COLORS.find(c=>c.hex===p.hex)||BLOCK_COLORS[0];
     const cat=CAT_MAP[p.catId]||null;
     const chip=document.createElement('div');
-    chip.className='preset-chip';chip.draggable=true;
+    chip.className='preset-chip';chip.draggable=true;chip.style.position='relative';
     chip.title=`Drag to schedule${cat?' · '+cat.name:''}`;
     chip.innerHTML=`<div class="preset-chip-dot" style="background:${col.hex}"></div>${escHtml(p.text)}`;
+
+    // FIX: × delete button, shown on hover
+    const del=document.createElement('button');
+    del.textContent='×';del.title='Remove preset';
+    del.style.cssText='position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#EF4444;color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;padding:0;z-index:10;font-weight:700';
+    del.addEventListener('click',e=>{e.stopPropagation();e.preventDefault();deletePreset(i);});
+    chip.appendChild(del);
+    chip.addEventListener('mouseenter',()=>{del.style.display='flex';});
+    chip.addEventListener('mouseleave',()=>{del.style.display='none';});
+
     chip.addEventListener('dragstart',ev=>{
       dragColorObj=col;
       ev.dataTransfer.setData('text/plain','preset-swatch');
@@ -295,12 +298,7 @@ function updateCatSidePanel(){
     const item=document.createElement('div');item.className='cat-item';
     item.draggable=true;item.dataset.catId=cat.id;item.style.cursor='grab';
     item.innerHTML=`<div class="cat-dot" style="background:${cat.color}"></div><div style="flex:1;min-width:0"><div class="cat-name">${cat.emoji} ${cat.name}</div><div class="cat-bar"><div class="cat-bar-fill" style="width:${(h/maxH*100)}%;background:${cat.color}"></div></div></div><div class="cat-hours">${h>0?h.toFixed(1)+'h':''}</div>`;
-    item.addEventListener('dragstart',ev=>{
-      ev.dataTransfer.setData('text/plain','cat-tag');
-      ev.dataTransfer.setData('cat-id',cat.id);
-      ev.dataTransfer.effectAllowed='copy';
-      item.style.opacity='.5';
-    });
+    item.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain','cat-tag');ev.dataTransfer.setData('cat-id',cat.id);ev.dataTransfer.effectAllowed='copy';item.style.opacity='.5';});
     item.addEventListener('dragend',()=>{item.style.opacity='';});
     wrap.appendChild(item);
   });
@@ -308,10 +306,28 @@ function updateCatSidePanel(){
 function toggleCatPanel(){document.getElementById('cat-side-panel').classList.toggle('open');}
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ISSUE 2 FIX — Duration picker in the ⋯ dropdown
+// Root cause: the bottom-resize handle (block-resize-b) exists and works, but
+// is hard to discover on small blocks or touch screens. Adding explicit 1h/2h/
+// 3h/4h quick-set buttons in the dropdown solves both discoverability and
+// precision. The formula to set N hours: height = N * ROW_H - 6.
+// Edge case: if a block starts at hour 22 and the user picks 4h, it will
+// extend beyond midnight — findFreeSlot and the 24*ROW_H guard in the
+// overlap detector handle this gracefully.
+// ══════════════════════════════════════════════════════════════════════════════
+function setBlockDuration(block,hours){
+  block.style.height=(hours*ROW_H-6)+'px';
+  saveWS();closeDD();
+  showToast(`Block set to ${hours}h`);
+}
+
 function openBlockDD(block,btnEl){
   closeDD();
   const portal=document.getElementById('dd-portal');
   const dd=document.createElement('div');dd.className='block-dd';
+
+  // Colour
   dd.innerHTML=`<div class="dd-title">Colour</div><div class="dd-swatches" id="dd-sw"></div>`;
   BLOCK_COLORS.forEach(col=>{
     const s=document.createElement('div');s.className='dd-swatch'+(block.dataset.hex===col.hex?' cur':'');
@@ -319,15 +335,31 @@ function openBlockDD(block,btnEl){
     s.addEventListener('click',e=>{e.stopPropagation();applyBlockColor(block,col);saveWS();closeDD();});
     dd.querySelector('#dd-sw').appendChild(s);
   });
+
+  // Duration quick-set
   dd.appendChild(Object.assign(document.createElement('hr'),{className:'dd-divider'}));
-  const saveBtn=mkDDBtn('💾','Save as Preset',()=>{
+  const durTitle=document.createElement('div');durTitle.className='dd-title';durTitle.textContent='Duration';
+  dd.appendChild(durTitle);
+  const durRow=document.createElement('div');durRow.style.cssText='display:flex;gap:5px;padding:2px 10px 10px';
+  const curH=Math.round(((parseFloat(block.style.height)||block.offsetHeight)+6)/ROW_H);
+  [1,2,3,4].forEach(h=>{
+    const b=document.createElement('button');b.textContent=`${h}h`;
+    b.style.cssText=`flex:1;padding:6px 0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${curH===h?'var(--accent)':'var(--border)'};background:${curH===h?'var(--accent)':'var(--surface)'};color:${curH===h?'#fff':'var(--text)'}`;
+    b.addEventListener('click',e=>{e.stopPropagation();setBlockDuration(block,h);});
+    durRow.appendChild(b);
+  });
+  dd.appendChild(durRow);
+
+  dd.appendChild(Object.assign(document.createElement('hr'),{className:'dd-divider'}));
+
+  // Preset save
+  dd.appendChild(mkDDBtn('💾','Save as Preset',()=>{
     const t=(block.querySelector('.block-text')||{}).textContent.trim();
     if(!t){showToast('Type something first!');closeDD();return;}
     const p=JSON.parse(localStorage.getItem('tf_presets_v2')||'[]');
     p.push({text:t,hex:block.dataset.hex,catId:block.dataset.cat||''});
     localStorage.setItem('tf_presets_v2',JSON.stringify(p));closeDD();showToast('Preset saved ✓');renderPresetBar();
-  });
-  dd.appendChild(saveBtn);
+  }));
   dd.appendChild(mkDDBtn('⧉','Duplicate',()=>{
     const t=(block.querySelector('.block-text')||{}).textContent||'';
     const c=BLOCK_COLORS.find(x=>x.hex===block.dataset.hex)||BLOCK_COLORS[0];
@@ -335,8 +367,10 @@ function openBlockDD(block,btnEl){
     saveWS();closeDD();
   }));
   const db=mkDDBtn('🗑','Delete Block',()=>{beep('delete');if(selectedBlock===block)selectedBlock=null;block.remove();saveWS();closeDD();});db.classList.add('danger');
-  dd.appendChild(Object.assign(document.createElement('hr'),{className:'dd-divider'}));dd.appendChild(db);
+  dd.appendChild(Object.assign(document.createElement('hr'),{className:'dd-divider'}));
+  dd.appendChild(db);
   portal.appendChild(dd);
+
   const br=btnEl.getBoundingClientRect();
   let top=br.bottom+4,left=br.right-242;
   if(left<6)left=6;if(left+242>window.innerWidth-6)left=window.innerWidth-248;
@@ -347,14 +381,12 @@ function mkDDBtn(icon,label,cb){const b=document.createElement('button');b.class
 function closeDD(){document.getElementById('dd-portal').innerHTML='';}
 
 
-// ─── FIX: buildTimeGrid uses fmt12h() for 12-hour AM/PM labels ───────────────
 function buildTimeGrid(){
   const col=document.getElementById('time-col'),grid=document.getElementById('grid-area');
   const nl=document.getElementById('now-line'),ch=today.getHours();
   for(let h=0;h<24;h++){
-    const lbl=document.createElement('div');
-    lbl.className='time-label'+(h===ch?' cur-hr':'');
-    lbl.textContent=fmt12h(h);  // FIX: was h.toString().padStart(2,'0')+':00'
+    const lbl=document.createElement('div');lbl.className='time-label'+(h===ch?' cur-hr':'');
+    lbl.textContent=typeof fmt12h==='function'?fmt12h(h):h.toString().padStart(2,'0')+':00';
     col.appendChild(lbl);
     const row=document.createElement('div');row.className='grid-row'+(h===ch?' cur-hr-row':'');row.style.top=(h*ROW_H)+'px';grid.insertBefore(row,nl);
   }
@@ -364,74 +396,65 @@ function updateNowLine(){
   const nl=document.getElementById('now-line');if(nl)nl.style.top=top+'px';
 }
 
-
 function changeDate(n){const d=new Date(currentDate);d.setDate(d.getDate()+n);setCurrentDate(fmtDate(d));}
 function goToday(){setCurrentDate(fmtDate(new Date()));}
 function setCurrentDate(ds){
   currentDate=ds;loadWS(ds);
-  const label=dateDisplayStr(ds);
-  document.getElementById('dnav-label').textContent=label;
+  document.getElementById('dnav-label').textContent=dateDisplayStr(ds);
 }
 
-
-function clearBlockPlacementState(){document.querySelectorAll('#grid-area .block.conflict, #grid-area .block.valid').forEach(b=>b.classList.remove('conflict','valid'));}
-function markBlockPlacementState(block){if(!block)return;block.classList.remove('conflict','valid');block.classList.add(hasOverlap(parseFloat(block.style.top)||0, block.offsetHeight, block)?'conflict':'valid');}
-function bindBlockPointerInteractions(block, txt, rb, rr){
-  let pressTimer=null,start=null,mode=null,resizeStartH=0,resizeStartW=0,dragging=false;
+function clearBlockPlacementState(){document.querySelectorAll('#grid-area .block.conflict,#grid-area .block.valid').forEach(b=>b.classList.remove('conflict','valid'));}
+function markBlockPlacementState(block){if(!block)return;block.classList.remove('conflict','valid');block.classList.add(hasOverlap(parseFloat(block.style.top)||0,block.offsetHeight,block)?'conflict':'valid');}
+function bindBlockPointerInteractions(block,txt,rb,rr){
+  let pressTimer=null,start=null,mode=null,resizeStartH=0,dragging=false;
   const clearPress=()=>{if(pressTimer){clearTimeout(pressTimer);pressTimer=null;}};
   block.addEventListener('touchstart',e=>{
-    if(e.target===rb||e.target===rr||e.target.closest('.block-text')||e.target.closest('.block-check')||e.target.closest('.block-menu-btn')) return;
+    if(e.target===rb||e.target===rr||e.target.closest('.block-text')||e.target.closest('.block-check')||e.target.closest('.block-menu-btn'))return;
     const pt=getEventPoint(e);start={x:pt.clientX,y:pt.clientY,left:parseFloat(block.style.left)||0,top:parseFloat(block.style.top)||0};
     selectBlock(block);dragging=false;mode='pending';
     pressTimer=setTimeout(()=>{mode='resize-touch';resizeStartH=block.offsetHeight;block.classList.add('resizing-touch');navigator.vibrate&&navigator.vibrate(12);},450);
   },{passive:true});
   block.addEventListener('touchmove',e=>{
-    if(!start) return; const pt=getEventPoint(e); const dx=pt.clientX-start.x, dy=pt.clientY-start.y;
-    if(Math.abs(dx)>8||Math.abs(dy)>8) clearPress();
-    if(mode==='pending') mode=Math.abs(dx)>Math.abs(dy)+18?'swipe':'drag';
-    if(mode==='swipe'){
-      e.preventDefault(); block.classList.add('swiping'); block.style.transform=`translateX(${dx}px)`; block.style.opacity=Math.max(.2,1-Math.abs(dx)/160);
-    }else if(mode==='resize-touch'){
-      e.preventDefault(); const newH=Math.max(ROW_H-6, resizeStartH+dy); block.style.height=(Math.max(1,Math.round(newH/ROW_H))*ROW_H-6)+'px'; markBlockPlacementState(block);
-    }else if(mode==='drag'){
-      e.preventDefault(); dragging=true; const grid=document.getElementById('grid-area'); const gr=grid.getBoundingClientRect();
-      block.style.left=Math.max(0,start.left+dx)+'px'; block.style.top=Math.max(0,start.top+dy)+'px'; markBlockPlacementState(block);
-    }
+    if(!start)return;const pt=getEventPoint(e);const dx=pt.clientX-start.x,dy=pt.clientY-start.y;
+    if(Math.abs(dx)>8||Math.abs(dy)>8)clearPress();
+    if(mode==='pending')mode=Math.abs(dx)>Math.abs(dy)+18?'swipe':'drag';
+    if(mode==='swipe'){e.preventDefault();block.classList.add('swiping');block.style.transform=`translateX(${dx}px)`;block.style.opacity=Math.max(.2,1-Math.abs(dx)/160);}
+    else if(mode==='resize-touch'){e.preventDefault();const newH=Math.max(ROW_H-6,resizeStartH+dy);block.style.height=(Math.max(1,Math.round(newH/ROW_H))*ROW_H-6)+'px';markBlockPlacementState(block);}
+    else if(mode==='drag'){e.preventDefault();dragging=true;block.style.left=Math.max(0,start.left+dx)+'px';block.style.top=Math.max(0,start.top+dy)+'px';markBlockPlacementState(block);}
   },{passive:false});
   block.addEventListener('touchend',e=>{
-    if(!start) return; clearPress(); const pt=getEventPoint(e); const dx=pt.clientX-start.x;
-    if(mode==='swipe' && Math.abs(dx)>110){beep('delete'); if(selectedBlock===block) selectedBlock=null; block.remove(); saveWS(); showToast('Block deleted');}
-    else if(mode==='resize-touch'){block.classList.remove('resizing-touch'); block.style.height=(Math.max(1,Math.round(block.offsetHeight/ROW_H))*ROW_H-6)+'px'; block.style.top=findFreeSlot(parseFloat(block.style.top)||0, block.offsetHeight, block)+'px'; saveWS();}
-    else if(mode==='drag'){block.style.top=findFreeSlot(parseFloat(block.style.top)||0, block.offsetHeight, block)+'px'; saveWS();}
-    block.classList.remove('swiping'); block.style.transform=''; block.style.opacity=''; clearBlockPlacementState(); start=null; mode=null;
+    if(!start)return;clearPress();const pt=getEventPoint(e);const dx=pt.clientX-start.x;
+    if(mode==='swipe'&&Math.abs(dx)>110){beep('delete');if(selectedBlock===block)selectedBlock=null;block.remove();saveWS();showToast('Block deleted');}
+    else if(mode==='resize-touch'){block.classList.remove('resizing-touch');block.style.height=(Math.max(1,Math.round(block.offsetHeight/ROW_H))*ROW_H-6)+'px';block.style.top=findFreeSlot(parseFloat(block.style.top)||0,block.offsetHeight,block)+'px';saveWS();}
+    else if(mode==='drag'){block.style.top=findFreeSlot(parseFloat(block.style.top)||0,block.offsetHeight,block)+'px';saveWS();}
+    block.classList.remove('swiping');block.style.transform='';block.style.opacity='';clearBlockPlacementState();start=null;mode=null;
   });
 }
 const __createBlock=createBlock;
 createBlock=function(x,y,text,color,catId,w,h,id,done){
   const block=__createBlock(x,y,text,color,catId,w,h,id,done);
-  const txt=block.querySelector('.block-text');
-  const rb=block.querySelector('.block-resize-b');
-  const rr=block.querySelector('.block-resize-r');
-  bindBlockPointerInteractions(block,txt,rb,rr);
+  bindBlockPointerInteractions(block,block.querySelector('.block-text'),block.querySelector('.block-resize-b'),block.querySelector('.block-resize-r'));
   return block;
 }
 const __dragBlock=dragBlock;
 dragBlock=function(e,block){
-  const p0=getEventPoint(e); e.preventDefault();
+  const p0=getEventPoint(e);e.preventDefault();
   const grid=document.getElementById('grid-area'),br=block.getBoundingClientRect();
   const ox=p0.clientX-br.left,oy=p0.clientY-br.top,origH=block.offsetHeight;
   block.classList.add('dragging');block.style.zIndex=100;
   const onMove=ev=>{
-    const p=getEventPoint(ev); const gr=grid.getBoundingClientRect();
-    block.style.left=Math.max(0,p.clientX-gr.left-ox)+'px'; block.style.top=Math.max(0,p.clientY-gr.top-oy)+'px';
+    const p=getEventPoint(ev);const gr=grid.getBoundingClientRect();
+    block.style.left=Math.max(0,p.clientX-gr.left-ox)+'px';block.style.top=Math.max(0,p.clientY-gr.top-oy)+'px';
     const row=Math.floor((p.clientY-gr.top)/ROW_H);
     document.querySelectorAll('.grid-row.drop-hl').forEach(r=>r.classList.remove('drop-hl'));
     const rows=document.querySelectorAll('.grid-row');if(rows[row])rows[row].classList.add('drop-hl');
     markBlockPlacementState(block);
   };
   const onUp=()=>{
-    block.classList.remove('dragging');block.style.zIndex=''; document.querySelectorAll('.grid-row.drop-hl').forEach(r=>r.classList.remove('drop-hl'));
-    const rawY=parseFloat(block.style.top)||0; block.style.top=findFreeSlot(rawY,origH,block)+'px'; clearBlockPlacementState(); saveWS();
+    block.classList.remove('dragging');block.style.zIndex='';
+    document.querySelectorAll('.grid-row.drop-hl').forEach(r=>r.classList.remove('drop-hl'));
+    block.style.top=findFreeSlot(parseFloat(block.style.top)||0,origH,block)+'px';
+    clearBlockPlacementState();saveWS();
     document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);
     document.removeEventListener('touchmove',onMove);document.removeEventListener('touchend',onUp);
   };
@@ -440,13 +463,13 @@ dragBlock=function(e,block){
 }
 resizeBlockH=function(e,block){
   e.preventDefault();const sy=getEventPoint(e).clientY,sh=block.offsetHeight;
-  const onMove=ev=>{const p=getEventPoint(ev); block.style.height=Math.max(ROW_H-6,sh+(p.clientY-sy))+'px'; markBlockPlacementState(block);};
-  const onUp=()=>{block.style.height=(Math.max(1,Math.round(block.offsetHeight/ROW_H))*ROW_H-6)+'px'; clearBlockPlacementState(); saveWS(); document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove);document.removeEventListener('touchend',onUp);};
-  document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp); document.addEventListener('touchmove',onMove,{passive:false});document.addEventListener('touchend',onUp);
+  const onMove=ev=>{const p=getEventPoint(ev);block.style.height=Math.max(ROW_H-6,sh+(p.clientY-sy))+'px';markBlockPlacementState(block);};
+  const onUp=()=>{block.style.height=(Math.max(1,Math.round(block.offsetHeight/ROW_H))*ROW_H-6)+'px';clearBlockPlacementState();saveWS();document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);document.removeEventListener('touchmove',onMove);document.removeEventListener('touchend',onUp);};
+  document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);document.addEventListener('touchmove',onMove,{passive:false});document.addEventListener('touchend',onUp);
 }
 resizeBlockW=function(e,block){
   e.preventDefault();const sx=getEventPoint(e).clientX,sw=block.offsetWidth;
-  const onMove=ev=>{const p=getEventPoint(ev); block.style.width=Math.max(130,sw+(p.clientX-sx))+'px';};
-  const onUp=()=>{saveWS(); document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove);document.removeEventListener('touchend',onUp);};
-  document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp); document.addEventListener('touchmove',onMove,{passive:false});document.addEventListener('touchend',onUp);
+  const onMove=ev=>{const p=getEventPoint(ev);block.style.width=Math.max(130,sw+(p.clientX-sx))+'px';};
+  const onUp=()=>{saveWS();document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);document.removeEventListener('touchmove',onMove);document.removeEventListener('touchend',onUp);};
+  document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);document.addEventListener('touchmove',onMove,{passive:false});document.addEventListener('touchend',onUp);
 }

@@ -3,13 +3,51 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>TimeFlow Modular</title>
+<title>TimeFlow</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="./styles.css"/>
+
+<!-- ═══ STEP 1: Firebase SDKs ═══════════════════════════════════════════════ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+
+<!-- ═══ STEP 2: YOUR Firebase config — paste your values here ═══════════════
+     Get these from: Firebase Console → Project Settings → Your apps → Web     -->
+<script>
+  firebase.initializeApp({
+    apiKey:            "AIzaSyArU10zwd41PATcY2y_8FD_S7LjR1ptXCE",
+    authDomain:        "timeblocks1.firebaseapp.com",
+    projectId:         "timeblocks1",
+    storageBucket:     "timeblocks1.firebasestorage.app",
+    messagingSenderId: "465443568359",
+    appId:             "1:465443568359:web:a42b056897aaa08cbd4042",
+    measurementId:     "G-REDSQV5JEK"
+  });
+</script>
 </head>
 <body>
 
-<div id="app">
+<!-- ═══ LOGIN SCREEN — shown until Google auth resolves ══════════════════════ -->
+<div id="login-screen">
+  <div class="login-logo">⏱</div>
+  <div class="login-title">Time<span>Flow</span></div>
+  <div class="login-sub">Your personal time planner — sign in to save everything</div>
+  <button id="google-login-btn">
+    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" alt="Google"/>
+    Continue with Google
+  </button>
+  <div id="login-error"></div>
+  <div class="login-features">
+    <div class="login-feat"><span>📅</span><span>Schedule</span></div>
+    <div class="login-feat"><span>📊</span><span>Analytics</span></div>
+    <div class="login-feat"><span>🏢</span><span>Business</span></div>
+    <div class="login-feat"><span>🔥</span><span>Streaks</span></div>
+  </div>
+</div>
+
+<!-- ═══ MAIN APP — hidden until signed in ════════════════════════════════════ -->
+<div id="app" style="display:none">
+
 <!-- LEFT SIDEBAR -->
 <nav id="sidebar">
   <div class="sb-logo">
@@ -26,19 +64,19 @@
   <div class="sb-nav">
     <div class="sb-nav-section">
       <div class="sb-nav-section-label">Main</div>
-      <button class="nav-item active" data-view="home"           onclick="switchView('home')">          <span class="ni">📅</span>Schedule</button>
-      <button class="nav-item"        data-view="categories"     onclick="switchView('categories')">    <span class="ni">🗂</span>Categories</button>
-      <button class="nav-item"        data-view="important-dates"onclick="switchView('important-dates')"><span class="ni">📌</span>Important Dates<span class="nb" id="nb-dates"></span></button>
-      <button class="nav-item"        data-view="analytics"      onclick="switchView('analytics')">     <span class="ni">📊</span>Analytics</button>
+      <button class="nav-item active" data-view="home"            onclick="switchView('home')">           <span class="ni">📅</span>Schedule</button>
+      <button class="nav-item"        data-view="categories"      onclick="switchView('categories')">     <span class="ni">🗂</span>Categories</button>
+      <button class="nav-item"        data-view="important-dates" onclick="switchView('important-dates')"><span class="ni">📌</span>Important Dates<span class="nb" id="nb-dates"></span></button>
+      <button class="nav-item"        data-view="analytics"       onclick="switchView('analytics')">      <span class="ni">📊</span>Analytics</button>
     </div>
     <div class="sb-nav-section">
       <div class="sb-nav-section-label">Social</div>
-      <button class="nav-item"        data-view="friends"        onclick="switchView('friends')">       <span class="ni">👥</span>Friends</button>
-      <button class="nav-item"        data-view="messages"       onclick="switchView('messages')">      <span class="ni">💬</span>Messages<span class="nb" id="nb-msgs"></span></button>
+      <button class="nav-item"        data-view="friends"         onclick="switchView('friends')">        <span class="ni">👥</span>Friends</button>
+      <button class="nav-item"        data-view="messages"        onclick="switchView('messages')">       <span class="ni">💬</span>Messages<span class="nb" id="nb-msgs"></span></button>
     </div>
     <div class="sb-nav-section">
       <div class="sb-nav-section-label">Work</div>
-      <button class="nav-item"        data-view="business"       onclick="switchView('business')">      <span class="ni">🏢</span>Business</button>
+      <button class="nav-item"        data-view="business"        onclick="switchView('business')">       <span class="ni">🏢</span>Business</button>
     </div>
   </div>
   <div class="sb-streak" id="sb-streak-widget">
@@ -234,13 +272,14 @@
 
 <!-- MOBILE BOTTOM NAV -->
 <nav id="mobile-bottom-nav">
-  <button class="mbn-item active" data-view="home"      onclick="switchView('home')">     <span class="mbn-icon">📅</span><span class="mbn-label">Schedule</span></button>
-  <button class="mbn-item"        data-view="categories"onclick="switchView('categories')"><span class="mbn-icon">🗂</span><span class="mbn-label">Categories</span></button>
-  <button class="mbn-item"        data-view="analytics" onclick="switchView('analytics')"><span class="mbn-icon">📊</span><span class="mbn-label">Analytics</span></button>
-  <button class="mbn-item"        data-view="friends"   onclick="switchView('friends')">  <span class="mbn-icon">👥</span><span class="mbn-label">Friends</span></button>
-  <button class="mbn-item"        data-view="profile"   onclick="switchView('profile')">  <span class="mbn-icon">👤</span><span class="mbn-label">Profile</span></button>
+  <button class="mbn-item active" data-view="home"       onclick="switchView('home')">      <span class="mbn-icon">📅</span><span class="mbn-label">Schedule</span></button>
+  <button class="mbn-item"        data-view="categories" onclick="switchView('categories')"><span class="mbn-icon">🗂</span><span class="mbn-label">Categories</span></button>
+  <button class="mbn-item"        data-view="analytics"  onclick="switchView('analytics')"> <span class="mbn-icon">📊</span><span class="mbn-label">Analytics</span></button>
+  <button class="mbn-item"        data-view="friends"    onclick="switchView('friends')">   <span class="mbn-icon">👥</span><span class="mbn-label">Friends</span></button>
+  <button class="mbn-item"        data-view="profile"    onclick="switchView('profile')">   <span class="mbn-icon">👤</span><span class="mbn-label">Profile</span></button>
 </nav>
-</div>
+</div><!-- #app -->
+
 <div id="dd-portal"></div>
 <div id="toast"></div>
 <div id="milestone-popup">
@@ -248,12 +287,11 @@
   <div class="mp-title" id="mp-title">Milestone!</div>
   <div class="mp-sub"   id="mp-sub"></div>
   <div class="mp-score" id="mp-score"></div>
-<!-- ═══════════════════════════════ APP HTML ═══════════════════════════════ -->
+</div>
 
-
-<!-- ═══════════════════════════════ JAVASCRIPT ═══════════════════════════════ -->
-
-
+<!-- ═══ APP SCRIPTS — order matters ═════════════════════════════════════════ -->
+<!-- auth.js MUST be first — it sets up getUserPrefix() used by state.js      -->
+<script src="./js/auth.js"></script>
 <script src="./js/state.js"></script>
 <script src="./js/blocks.js"></script>
 <script src="./js/categories.js"></script>

@@ -80,14 +80,17 @@ const SK={
   MISSIONS:'tf_missions_v4',NOTIFS:'tf_notifs_v2',
   DATES:'tf_dates_v1',THEME:'tf_theme_v1',
 };
-function gs(k){try{return JSON.parse(localStorage.getItem(SK[k]))||null}catch{return null}}
-function ss(k,d){localStorage.setItem(SK[k],JSON.stringify(d))}
+// ─── Per-user storage: every key is prefixed with the Firebase UID ────────────
+// getUserPrefix() is defined in auth.js and returns  "uid_"  or  "guest_"
+function _pfx(k){ return (window.getUserPrefix ? window.getUserPrefix() : 'guest_') + k; }
+function gs(k){  try{return JSON.parse(localStorage.getItem(_pfx(SK[k])))||null}catch{return null}}
+function ss(k,d){localStorage.setItem(_pfx(SK[k]),JSON.stringify(d))}
 
-// ─── Raw localStorage helpers for dynamic keys (e.g. per-month business data) ───
-function gsRaw(key){try{return JSON.parse(localStorage.getItem(key))||null}catch{return null}}
-function ssRaw(key,d){localStorage.setItem(key,JSON.stringify(d))}
+// Raw helpers for dynamic keys (e.g. per-month business data) — also prefixed
+function gsRaw(key){try{return JSON.parse(localStorage.getItem(_pfx(key)))||null}catch{return null}}
+function ssRaw(key,d){localStorage.setItem(_pfx(key),JSON.stringify(d))}
 
-function wsKey(d){return`tf_ws2_${d}`}
+function wsKey(d){return _pfx('tf_ws2_'+d)}
 
 let currentDate=fmtDate(new Date());
 let activeChatId=null;
@@ -240,7 +243,9 @@ function updateStreakUI(){
   const level=Math.floor((sc.total||0)/500)+1;
   document.getElementById('sb-lvl').textContent=`Level ${level}`;
   const ac=CHARACTERS.find(c=>c.id===sc.activeChar)||CHARACTERS[0];
-  document.getElementById('sb-av').textContent=ac.emoji;
+  // Only set emoji avatar if no Google photo is loaded
+  const avEl=document.getElementById('sb-av');
+  if(avEl&&!avEl.querySelector('img'))avEl.textContent=ac.emoji;
 }
 function showMilestonePopup(days,pts){
   document.getElementById('mp-title').textContent=`${days}-Day Streak! 🎉`;

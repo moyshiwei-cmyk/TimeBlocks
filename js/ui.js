@@ -4,13 +4,24 @@ function renderProfile(){
   const level=Math.floor((sc.total||0)/500)+1;
   const xpInLevel=(sc.total||0)%500,xpPct=xpInLevel/500*100;
   const ac=CHARACTERS.find(c=>c.id===sc.activeChar)||CHARACTERS[0];
+
+  // Use real Google name/photo if signed in, otherwise fall back to defaults
+  const gUser    = window.TF_USER;
+  const dispName = gUser?.displayName || 'Time Architect';
+  const dispEmail= gUser?.email       || '';
+  const photoURL = gUser?.photoURL    || '';
+  const avatarHtml = photoURL
+    ? `<img src="${photoURL}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--accent)" referrerpolicy="no-referrer"/>`
+    : ac.emoji;
+
   inner.innerHTML=`
     <div class="view-title">Profile</div>
-    <div class="view-sub">Your progress, characters & achievements</div>
+    <div class="view-sub">Your progress, characters &amp; achievements</div>
     <div class="profile-hero">
-      <div class="ph-avatar">${ac.emoji}<div class="ph-lvl">Lv ${level}</div></div>
+      <div class="ph-avatar" style="font-size:${photoURL?'0':'inherit'}">${avatarHtml}<div class="ph-lvl">Lv ${level}</div></div>
       <div class="ph-stats">
-        <div class="ph-name">Time Architect</div>
+        <div class="ph-name">${escHtml(dispName)}</div>
+        ${dispEmail?`<div class="ph-tag" style="font-size:11px;color:var(--muted);margin-bottom:4px">${escHtml(dispEmail)}</div>`:''}
         <div class="ph-tag">Active: ${ac.name} (${ac.rarity}) · ${ac.bonus} bonus</div>
         <div class="ph-row">
           <div class="ph-stat"><div class="ph-stat-val">${(sc.total||0).toLocaleString()}</div><div class="ph-stat-lbl">Points</div></div>
@@ -22,6 +33,9 @@ function renderProfile(){
           <div class="xp-bar"><div class="xp-fill" style="width:${xpPct}%"></div></div>
           <div class="xp-label"><span>Lv ${level}</span><span>${xpInLevel}/500 XP</span><span>Lv ${level+1}</span></div>
         </div>
+        <button onclick="signOutUser()" style="margin-top:14px;background:rgba(239,68,68,.12);color:#EF4444;border:1px solid rgba(239,68,68,.3);border-radius:9px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">
+          Sign Out of Google
+        </button>
       </div>
     </div>
     <div class="chars-section" id="chars-section"></div>
@@ -94,4 +108,5 @@ function init(){
   setBizViewMode('week');
   showToast('⌨️ Select block → Delete to remove · Ctrl+drag to duplicate');
 }
-init();
+// init() is called by auth.js after Google sign-in resolves.
+// Do NOT call it here directly — auth.js owns the boot sequence.

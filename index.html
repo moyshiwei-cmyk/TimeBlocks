@@ -6,13 +6,9 @@
 <title>TimeFlow</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="./styles.css"/>
-
-<!-- ═══ STEP 1: Firebase SDKs ═══════════════════════════════════════════════ -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-
-<!-- ═══ STEP 2: YOUR Firebase config — paste your values here ═══════════════
-     Get these from: Firebase Console → Project Settings → Your apps → Web     -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
   firebase.initializeApp({
     apiKey:            "AIzaSyArU10zwd41PATcY2y_8FD_S7LjR1ptXCE",
@@ -23,11 +19,13 @@
     appId:             "1:465443568359:web:a42b056897aaa08cbd4042",
     measurementId:     "G-REDSQV5JEK"
   });
+  window.TF_DB   = firebase.firestore();
+  window.TF_AUTH = firebase.auth();
 </script>
 </head>
 <body>
 
-<!-- ═══ LOGIN SCREEN — shown until Google auth resolves ══════════════════════ -->
+<!-- LOGIN SCREEN -->
 <div id="login-screen">
   <div class="login-logo">⏱</div>
   <div class="login-title">Time<span>Flow</span></div>
@@ -45,10 +43,8 @@
   </div>
 </div>
 
-<!-- ═══ MAIN APP — hidden until signed in ════════════════════════════════════ -->
+<!-- MAIN APP -->
 <div id="app" style="display:none">
-
-<!-- LEFT SIDEBAR -->
 <nav id="sidebar">
   <div class="sb-logo">
     <div class="sb-logo-icon">⏱</div>
@@ -99,9 +95,7 @@
   </div>
 </nav>
 
-<!-- MAIN WRAP -->
 <div id="main-wrap">
-  <!-- TOPBAR -->
   <div id="topbar">
     <button class="topbar-hamburger" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">☰</button>
     <div><div class="topbar-title" id="topbar-title">Schedule</div></div>
@@ -127,6 +121,8 @@
         <div id="grid-area"><div id="now-line"></div></div>
       </div>
     </div>
+    <!-- Mobile add-block fab -->
+    <button id="mob-fab" onclick="showMobileAddSheet(null)">+</button>
     <div id="cat-side-panel">
       <div class="csp-head">
         <span>Categories</span>
@@ -168,6 +164,14 @@
     <div class="view-scroll"><div class="view-inner">
       <div class="view-title">Friends</div>
       <div class="view-sub">Your network and their streaks</div>
+      <!-- Add friend bar -->
+      <div class="add-friend-bar">
+        <div class="add-friend-tag-display" id="my-tag-display">Your tag: <span id="my-tag-val">…</span></div>
+        <div class="add-friend-input-row">
+          <input id="add-friend-input" class="tf-input" placeholder="Enter friend tag e.g. #ABG67852" maxlength="9"/>
+          <button class="friend-btn" onclick="addFriendByTag()">Add Friend</button>
+        </div>
+      </div>
       <div class="friend-list" id="friend-list"></div>
     </div></div>
   </div>
@@ -217,7 +221,6 @@
   <div class="view" id="view-profile">
     <div class="view-scroll"><div class="view-inner" id="profile-inner"></div></div>
   </div>
-
 </div><!-- #main-wrap -->
 
 <!-- RIGHT PANEL -->
@@ -255,7 +258,7 @@
       <div id="chat-scroll"></div>
       <div id="chat-typing"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>
       <div id="chat-input-area">
-        <input id="chat-input" placeholder="Type a message…" onkeydown="chatKey(event)"/>
+        <input id="chat-input" type="text" placeholder="Type a message…" autocomplete="off"/>
         <button id="chat-send" onclick="sendMsg()">➤</button>
       </div>
     </div>
@@ -267,6 +270,51 @@
   <div id="notif-dd" onclick="event.stopPropagation()">
     <div class="notif-header"><span>Notifications</span><button class="notif-clear" onclick="clearNotifs()">Clear all</button></div>
     <div id="notif-list"></div>
+  </div>
+</div>
+
+<!-- MOBILE ADD BLOCK SHEET — hidden by default, opened by JS only -->
+<div id="mob-sheet-overlay" style="display:none" onclick="closeMobileSheet()">
+  <div id="mob-sheet" onclick="event.stopPropagation()">
+    <div class="mob-sheet-handle"></div>
+    <div class="mob-sheet-title">Add Block</div>
+    <div class="mob-sheet-row">
+      <label class="mob-sheet-lbl">Time</label>
+      <select id="mob-hour" class="tf-input" style="flex:1"></select>
+    </div>
+    <div class="mob-sheet-row">
+      <label class="mob-sheet-lbl">Duration</label>
+      <div class="mob-dur-row" id="mob-dur-row">
+        <button class="mob-dur-btn active" data-h="1" onclick="selectMobDur(1)">1h</button>
+        <button class="mob-dur-btn" data-h="2" onclick="selectMobDur(2)">2h</button>
+        <button class="mob-dur-btn" data-h="3" onclick="selectMobDur(3)">3h</button>
+        <button class="mob-dur-btn" data-h="4" onclick="selectMobDur(4)">4h</button>
+      </div>
+    </div>
+    <div class="mob-sheet-row">
+      <label class="mob-sheet-lbl">Label</label>
+      <input id="mob-label" type="text" class="tf-input" placeholder="What are you doing?" style="flex:1"/>
+    </div>
+    <div class="mob-sheet-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <label class="mob-sheet-lbl">Color</label>
+      <div id="mob-color-row" class="mob-color-row"></div>
+    </div>
+    <div class="mob-sheet-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <label class="mob-sheet-lbl">Category</label>
+      <div id="mob-cat-row" class="mob-cat-row"></div>
+    </div>
+    <button id="mob-add-btn" onclick="confirmMobileAdd()">Add Block</button>
+  </div>
+</div>
+
+<!-- FRIEND SCHEDULE VIEWER -->
+<div id="friend-sched-overlay" onclick="closeFriendSched()">
+  <div id="friend-sched-panel" onclick="event.stopPropagation()">
+    <div class="chat-header">
+      <div class="chat-hdr-info"><div class="chat-hdr-name" id="friend-sched-name">Schedule</div></div>
+      <button class="chat-close" onclick="closeFriendSched()">✕</button>
+    </div>
+    <div id="friend-sched-content"></div>
   </div>
 </div>
 
@@ -289,8 +337,7 @@
   <div class="mp-score" id="mp-score"></div>
 </div>
 
-<!-- ═══ APP SCRIPTS — order matters ═════════════════════════════════════════ -->
-<!-- auth.js MUST be first — it sets up getUserPrefix() used by state.js      -->
+<!-- SCRIPTS — ORDER IS CRITICAL -->
 <script src="./js/auth.js"></script>
 <script src="./js/state.js"></script>
 <script src="./js/blocks.js"></script>
